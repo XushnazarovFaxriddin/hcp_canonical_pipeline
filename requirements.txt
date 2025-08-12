@@ -1,7 +1,7 @@
-pyspark>=3.4
+pandas>=2.0
+pyarrow>=14.0
 dagster>=1.7
 dagster-webserver>=1.7
-dagster-pyspark>=0.22
 pydantic>=2.7
 pytest>=8.0
 pyyaml>=6.0

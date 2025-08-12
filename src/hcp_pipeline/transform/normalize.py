@@ -1,25 +1,40 @@
-from pyspark.sql import SparkSession, functions as F
+"""Normalize and consolidate provider and site data using pandas."""
+
+from pathlib import Path
+
+import pandas as pd
+
+from src.hcp_pipeline.utils.hashing import stable_site_id
 from src.hcp_pipeline.utils.io import load_project_settings
 from src.hcp_pipeline.utils.logging import get_logger
-from src.hcp_pipeline.utils.hashing import stable_site_id
-from pathlib import Path
+
 
 logger = get_logger("normalize")
 
 
-def normalize_address(df, prefix, line1, line2, city, state, postal):
-    # very light normalization
-    return df.withColumn(prefix + "_line1_norm", F.upper(F.trim(F.col(line1))))\
-            .withColumn(prefix + "_line2_norm", F.upper(F.trim(F.col(line2))))\
-            .withColumn(prefix + "_city_norm",  F.upper(F.trim(F.col(city))))\
-            .withColumn(prefix + "_state_norm", F.upper(F.trim(F.col(state))))\
-            .withColumn(prefix + "_postal_norm", F.upper(F.trim(F.col(postal))))
-            
+def normalize_address(df: pd.DataFrame, prefix: str, line1: str, line2: str, city: str, state: str, postal: str) -> pd.DataFrame:
+    """Normalize basic address fields using pandas string operations."""
+
+    df = df.copy()
+    df[f"{prefix}_line1_norm"] = df[line1].fillna("").astype(str).str.upper().str.strip()
+    df[f"{prefix}_line2_norm"] = df[line2].fillna("").astype(str).str.upper().str.strip()
+    df[f"{prefix}_city_norm"] = df[city].fillna("").astype(str).str.upper().str.strip()
+    df[f"{prefix}_state_norm"] = df[state].fillna("").astype(str).str.upper().str.strip()
+    df[f"{prefix}_postal_norm"] = df[postal].fillna("").astype(str).str.upper().str.strip()
+    return df
 
 
-def main():
+def _flatten_address(df: pd.DataFrame, column: str) -> pd.DataFrame:
+    """Expand a nested address dictionary column into dotted columns."""
+
+    if column not in df.columns:
+        return df
+    addr = pd.json_normalize(df[column]).add_prefix(f"{column}.")
+    return df.drop(columns=[column]).join(addr)
+
+
+def main() -> None:
     settings = load_project_settings()
-    spark = SparkSession.builder.appName("normalize").config("spark.sql.warehouse.dir", "./_work/spark-warehouse").config("spark.hadoop.fs.permissions.enabled", "false").getOrCreate()
 
     bronze_npi = settings["paths"]["working"]["bronze_npi"]
     bronze_internal = settings["paths"]["working"]["bronze_internal"]
@@ -27,44 +42,51 @@ def main():
     out_site = settings["paths"]["working"]["silver_sites"]
     out_xref = settings["paths"]["working"]["silver_xref"]
 
-    npi = spark.read.parquet(bronze_npi)
-    internal = spark.read.parquet(bronze_internal)
+    npi = pd.read_parquet(bronze_npi)
+    internal = pd.read_parquet(bronze_internal)
 
-    # ---- Providers (union NPI + Internal) ----
-    npi_p = (npi
-             .select(
-                 F.col("npi").alias("provider_npi"),
-                 F.col("provider_name").alias("provider_name_npi"),
-                 F.col("primary_specialty").alias("specialty_npi"),
-                 F.lit("NPI Registry").alias("src")
-             ))
+    # Flatten nested address structures for ease of use
+    npi = _flatten_address(npi, "practice_address")
+    internal = _flatten_address(internal, "encounter_location_address")
 
-    internal_p = (internal
-                  .select(
-                      F.col("treating_provider_npi").alias("provider_npi"),
-                      F.col("treating_provider_name").alias(
-                          "provider_name_internal"),
-                      F.lit(None).cast("string").alias("specialty_internal"),
-                      F.lit("InternalPatientSystem").alias("src")
-                  ))
+    # ---- Providers ----
+    npi_p = npi[["npi", "provider_name", "primary_specialty"]].rename(columns={
+        "npi": "provider_npi",
+        "provider_name": "provider_name_npi",
+        "primary_specialty": "specialty_npi",
+    })
+    npi_p["src"] = "NPI Registry"
 
-    providers = (npi_p.unionByName(internal_p, allowMissingColumns=True)
-                 .groupBy("provider_npi")
-                 .agg(
-                     F.first("provider_name_npi", ignorenulls=True).alias("provider_name_npi"),
-                     F.first("provider_name_internal", ignorenulls=True).alias("provider_name_internal"),
-                     F.first("specialty_npi", ignorenulls=True).alias("specialty_npi"),
-                     F.max("src").alias("last_seen_source")
-                 )
-                 .withColumn("canonical_provider_name",
-                           F.coalesce(F.col("provider_name_npi"), F.col("provider_name_internal")))
-                 .withColumn("primary_specialty", F.col("specialty_npi")))
+    internal_p = internal[["treating_provider_npi", "treating_provider_name"]].rename(columns={
+        "treating_provider_npi": "provider_npi",
+        "treating_provider_name": "provider_name_internal",
+    })
+    internal_p["specialty_npi"] = None
+    internal_p["src"] = "InternalPatientSystem"
 
+    providers = pd.concat([npi_p, internal_p], ignore_index=True)
+    providers = (
+        providers.groupby("provider_npi", dropna=False)
+        .agg(
+            {
+                "provider_name_npi": "first",
+                "provider_name_internal": "first",
+                "specialty_npi": "first",
+                "src": "max",
+            }
+        )
+        .reset_index()
+    )
+    providers["canonical_provider_name"] = providers["provider_name_npi"].combine_first(
+        providers["provider_name_internal"]
+    )
+    providers["primary_specialty"] = providers["specialty_npi"]
+
+    Path(out_prov).parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"Writing silver providers: {out_prov}")
-    providers.write.mode("overwrite").parquet(out_prov)
+    providers.to_parquet(out_prov, index=False)
 
-    # ---- Sites (derive from both) ----
-    # NPI sites
+    # ---- Sites ----
     npi_s = normalize_address(
         npi,
         prefix="practice",
@@ -73,17 +95,27 @@ def main():
         city="practice_address.city",
         state="practice_address.state",
         postal="practice_address.postal_code",
-    ).select(
-        F.col("practice_line1_norm").alias("line1"),
-        F.col("practice_line2_norm").alias("line2"),
-        F.col("practice_city_norm").alias("city"),
-        F.col("practice_state_norm").alias("state"),
-        F.col("practice_postal_norm").alias("postal"),
-        F.col("practice_name").alias("practice_name"),
-        F.lit("NPI Registry").alias("src")
     )
+    npi_s = npi_s[
+        [
+            "practice_line1_norm",
+            "practice_line2_norm",
+            "practice_city_norm",
+            "practice_state_norm",
+            "practice_postal_norm",
+            "practice_name",
+        ]
+    ].rename(
+        columns={
+            "practice_line1_norm": "line1",
+            "practice_line2_norm": "line2",
+            "practice_city_norm": "city",
+            "practice_state_norm": "state",
+            "practice_postal_norm": "postal",
+        }
+    )
+    npi_s["src"] = "NPI Registry"
 
-    # Internal sites
     internal_s = normalize_address(
         internal,
         prefix="enc",
@@ -92,43 +124,65 @@ def main():
         city="encounter_location_address.city",
         state="encounter_location_address.state",
         postal="encounter_location_address.postal_code",
-    ).select(
-        F.col("enc_line1_norm").alias("line1"),
-        F.col("enc_line2_norm").alias("line2"),
-        F.col("enc_city_norm").alias("city"),
-        F.col("enc_state_norm").alias("state"),
-        F.col("enc_postal_norm").alias("postal"),
-        F.col("encounter_location_name").alias("practice_name"),
-        F.lit("InternalPatientSystem").alias("src")
+    )
+    internal_s = internal_s[
+        [
+            "enc_line1_norm",
+            "enc_line2_norm",
+            "enc_city_norm",
+            "enc_state_norm",
+            "enc_postal_norm",
+            "encounter_location_name",
+        ]
+    ].rename(
+        columns={
+            "enc_line1_norm": "line1",
+            "enc_line2_norm": "line2",
+            "enc_city_norm": "city",
+            "enc_state_norm": "state",
+            "enc_postal_norm": "postal",
+            "encounter_location_name": "practice_name",
+        }
+    )
+    internal_s["src"] = "InternalPatientSystem"
+
+    sites = pd.concat([npi_s, internal_s], ignore_index=True)
+    sites["practice_site_id"] = sites.apply(
+        lambda r: stable_site_id(r["line1"], r["city"], r["state"], r["postal"], r["line2"]),
+        axis=1,
+    )
+    sites = (
+        sites.groupby("practice_site_id", dropna=False)
+        .agg(
+            {
+                "practice_name": "first",
+                "line1": "first",
+                "line2": "first",
+                "city": "first",
+                "state": "first",
+                "postal": "first",
+                "src": "max",
+            }
+        )
+        .reset_index()
+        .rename(
+            columns={
+                "practice_name": "canonical_practice_name",
+                "line1": "practice_line1",
+                "line2": "practice_line2",
+                "city": "practice_city",
+                "state": "practice_state",
+                "postal": "practice_postal",
+                "src": "last_seen_source",
+            }
+        )
     )
 
-    sites = npi_s.unionByName(internal_s, allowMissingColumns=True)
-
-    # derive site id via UDF
-    spark.udf.register("stable_site_id", stable_site_id)
-    sites = sites.withColumn(
-        "practice_site_id",
-        F.expr("stable_site_id(line1, city, state, postal, line2)")
-    )
-
-    sites = (sites
-             .groupBy("practice_site_id")
-             .agg(
-                 F.first("practice_name", ignorenulls=True).alias(
-                     "canonical_practice_name"),
-                 F.first("line1", ignorenulls=True).alias("practice_line1"),
-                 F.first("line2", ignorenulls=True).alias("practice_line2"),
-                 F.first("city", ignorenulls=True).alias("practice_city"),
-                 F.first("state", ignorenulls=True).alias("practice_state"),
-                 F.first("postal", ignorenulls=True).alias("practice_postal"),
-                 F.max("src").alias("last_seen_source"),
-             ))
-
+    Path(out_site).parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"Writing silver sites: {out_site}")
-    sites.write.mode("overwrite").parquet(out_site)
+    sites.to_parquet(out_site, index=False)
 
-    # ---- Xref (providers↔sites) ----
-    # join internal encounters to provider_npi and site id
+    # ---- Xref ----
     internal_norm = normalize_address(
         internal,
         prefix="enc",
@@ -137,30 +191,31 @@ def main():
         city="encounter_location_address.city",
         state="encounter_location_address.state",
         postal="encounter_location_address.postal_code",
-    ).withColumn(
-        "practice_site_id",
-        F.expr("stable_site_id(upper(trim(encounter_location_address.line1)), "
-               "upper(trim(encounter_location_address.city)), "
-               "upper(trim(encounter_location_address.state)), "
-               "upper(trim(encounter_location_address.postal_code)), "
-               "upper(trim(encounter_location_address.line2)))")
+    )
+    internal_norm["practice_site_id"] = internal_norm.apply(
+        lambda r: stable_site_id(
+            r["enc_line1_norm"],
+            r["enc_city_norm"],
+            r["enc_state_norm"],
+            r["enc_postal_norm"],
+            r["enc_line2_norm"],
+        ),
+        axis=1,
     )
 
-    xref = (internal_norm
-            .select(
-                F.col("treating_provider_npi").alias("provider_npi"),
-                F.col("practice_site_id"),
-                F.lit("provider_at").alias("relationship_type"),
-                F.lit("InternalPatientSystem").alias("last_seen_source")
-            ).dropna(subset=["provider_npi", "practice_site_id"])
-            .dropDuplicates(["provider_npi", "practice_site_id"])
-            )
+    xref = internal_norm[["treating_provider_npi", "practice_site_id"]].dropna(
+        subset=["treating_provider_npi", "practice_site_id"]
+    )
+    xref = xref.drop_duplicates()
+    xref = xref.rename(columns={"treating_provider_npi": "provider_npi"})
+    xref["relationship_type"] = "provider_at"
+    xref["last_seen_source"] = "InternalPatientSystem"
 
+    Path(out_xref).parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"Writing silver provider-site link: {out_xref}")
-    xref.write.mode("overwrite").parquet(out_xref)
-
-    spark.stop()
+    xref.to_parquet(out_xref, index=False)
 
 
 if __name__ == "__main__":
     main()
+

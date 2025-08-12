@@ -1,5 +1,9 @@
-from pyspark.sql import DataFrame
+"""Simple validation helpers for pandas DataFrames."""
 
-def expect_non_null(df: DataFrame, column: str) -> bool:
-    nulls = df.filter(df[column].isNull()).count()
-    return nulls == 0
+import pandas as pd
+
+
+def expect_non_null(df: pd.DataFrame, column: str) -> bool:
+    """Return True if the specified column contains no null values."""
+
+    return df[column].isnull().sum() == 0
