@@ -1,0 +1,18 @@
+paths:
+  input:
+    npi_jsonl: ./sample_data/npi/npi_sample.jsonl
+    internal_jsonl: ./sample_data/internal/internal_sample.jsonl
+  working:
+    bronze_npi: ./_work/bronze_npi_raw
+    bronze_internal: ./_work/bronze_internal_raw
+    silver_providers: ./_work/providers_normalized
+    silver_sites: ./_work/sites_normalized
+    silver_xref: ./_work/provider_site_link
+  output:
+    gold_providers: ./_output/gold_canonical_providers
+    gold_sites: ./_output/gold_canonical_sites
+    gold_xref: ./_output/gold_provider_site_xref
+    gold_view: ./_output/gold_hcp_view
+
+run:
+  build_id: local-demo-001

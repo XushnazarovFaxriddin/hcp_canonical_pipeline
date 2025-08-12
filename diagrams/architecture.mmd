@@ -1,0 +1,40 @@
+flowchart LR
+  subgraph Sources
+    NPI[NPI Registry JSONL]
+    INT[Internal Patient System JSONL]
+  end
+
+  subgraph Bronze["Bronze / Ingest"]
+    BI_NPI[bronze_npi_raw]
+    BI_INT[bronze_internal_raw]
+  end
+
+  subgraph Silver["Silver / Normalize & Link"]
+    SV_PROV[providers_normalized]
+    SV_SITE[sites_normalized]
+    SV_XREF[provider_site_link]
+  end
+
+  subgraph Gold["Gold / Canonical"]
+    GD_PROV[gold_canonical_providers]
+    GD_SITE[gold_canonical_sites]
+    GD_XREF[gold_provider_site_xref]
+    GD_VIEW[gold_hcp_view]
+  end
+
+  NPI -->|ingest| BI_NPI
+  INT -->|ingest| BI_INT
+
+  BI_NPI -->|clean, standardize| SV_PROV
+  BI_NPI -->|derive sites| SV_SITE
+  BI_INT -->|clean, standardize| SV_PROV
+  BI_INT -->|derive sites| SV_SITE
+  SV_PROV -->|NPI join & address fallback| SV_XREF
+
+  SV_PROV --> GD_PROV
+  SV_SITE --> GD_SITE
+  SV_XREF --> GD_XREF
+
+  GD_PROV --> GD_VIEW
+  GD_SITE --> GD_VIEW
+  GD_XREF --> GD_VIEW
