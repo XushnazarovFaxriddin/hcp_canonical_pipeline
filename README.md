@@ -1,3 +1,5 @@
+[Pandas version of this repo](https://github.com/XushnazarovFaxriddin/hcp_canonical_pipeline/tree/pandas_version)
+
 # Canonical HCP Data Pipeline (Prototype)
 
 This repository contains a minimal-but-professional prototype for building a **canonical healthcare provider (HCP) model** from:
