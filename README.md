@@ -10,6 +10,9 @@ It demonstrates ingestion, normalization/deduplication, entity linking, and a **
 
 > Built with **PySpark**, structured as a modular Python package, with optional **Dagster** orchestration and **pytest** tests.
 
+### Architecture diagram:
+![diagram](/diagrams/architecture.png)
+
 ---
 
 ## 1) Problem Overview & Goals
