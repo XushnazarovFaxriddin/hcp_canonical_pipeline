@@ -12,21 +12,24 @@ logger = get_logger("canonical")
 
 
 def main() -> None:
+    # Get project root directory
+    project_root = Path(__file__).resolve().parents[3]
     settings = load_project_settings()
 
-    prov = pd.read_parquet(settings["paths"]["working"]["silver_providers"])
-    site = pd.read_parquet(settings["paths"]["working"]["silver_sites"])
-    xref = pd.read_parquet(settings["paths"]["working"]["silver_xref"])
+    # Convert paths to absolute
+    prov = pd.read_parquet(project_root / settings["paths"]["working"]["silver_providers"])
+    site = pd.read_parquet(project_root / settings["paths"]["working"]["silver_sites"])
+    xref = pd.read_parquet(project_root / settings["paths"]["working"]["silver_xref"])
 
-    out_prov = settings["paths"]["output"]["gold_providers"]
-    out_site = settings["paths"]["output"]["gold_sites"]
-    out_xref = settings["paths"]["output"]["gold_xref"]
-    out_view = settings["paths"]["output"]["gold_view"]
+    out_prov = project_root / settings["paths"]["output"]["gold_providers"]
+    out_site = project_root / settings["paths"]["output"]["gold_sites"]
+    out_xref = project_root / settings["paths"]["output"]["gold_xref"]
+    out_view = project_root / settings["paths"]["output"]["gold_view"]
 
     logger.info(f"Writing gold providers: {out_prov}")
     prov_out = prov[
-        ["provider_npi", "canonical_provider_name", "primary_specialty", "last_seen_source"]
-    ].rename(columns={"last_seen_source": "source_system"})
+        ["provider_npi", "canonical_provider_name", "primary_specialty", "src"]
+    ].rename(columns={"src": "source_system"})
     Path(out_prov).parent.mkdir(parents=True, exist_ok=True)
     prov_out.to_parquet(out_prov, index=False)
 
@@ -69,9 +72,9 @@ def main() -> None:
             "practice_city",
             "practice_state",
             "practice_postal",
-            "last_seen_source",
+            "src",  # Using src instead of last_seen_source
         ]
-    ].rename(columns={"last_seen_source": "source_system"})
+    ].rename(columns={"src": "source_system"})
     logger.info(f"Writing gold view: {out_view}")
     Path(out_view).parent.mkdir(parents=True, exist_ok=True)
     view.to_parquet(out_view, index=False)

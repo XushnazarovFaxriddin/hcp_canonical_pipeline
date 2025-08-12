@@ -1,5 +1,6 @@
 """Ingest NPI registry data using pandas."""
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -24,7 +25,6 @@ def _read_jsonl(path: str, chunksize: int | None = 100_000) -> pd.DataFrame:
         df = pd.read_json(path, lines=True)
     return df
 
-
 def main() -> None:
     settings = load_project_settings()
 
@@ -34,7 +34,7 @@ def main() -> None:
     logger.info(f"Reading NPI JSONL: {input_path}")
     df = _read_jsonl(input_path)
 
-    # passthrough column for schema compatibility
+    # passthrough to retain schema compatibility
     df["source_system"] = df["source_system"]
 
     logger.info(f"Writing bronze NPI to: {bronze_path}")

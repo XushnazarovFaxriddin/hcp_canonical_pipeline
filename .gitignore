@@ -1,2 +1,14 @@
 /.venv
 /_work
+/venv
+/.tmp_dagster_home_*
+
+**/__pycache__/
+*.py[cod]
+
+/.pytest_cache
+/.mypy_cache
+/.coverage
+/.pytest_cache
+/.ruff_cache
+/.tox

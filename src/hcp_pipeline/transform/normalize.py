@@ -34,23 +34,54 @@ def _flatten_address(df: pd.DataFrame, column: str) -> pd.DataFrame:
 
 
 def main() -> None:
+    # Get project root directory
+    project_root = Path(__file__).resolve().parents[3]
     settings = load_project_settings()
 
-    bronze_npi = settings["paths"]["working"]["bronze_npi"]
-    bronze_internal = settings["paths"]["working"]["bronze_internal"]
-    out_prov = settings["paths"]["working"]["silver_providers"]
-    out_site = settings["paths"]["working"]["silver_sites"]
-    out_xref = settings["paths"]["working"]["silver_xref"]
+    # Convert relative paths to absolute
+    bronze_npi = project_root / settings["paths"]["working"]["bronze_npi"]
+    bronze_internal = project_root / settings["paths"]["working"]["bronze_internal"]
+    out_prov = project_root / settings["paths"]["working"]["silver_providers"]
+    out_site = project_root / settings["paths"]["working"]["silver_sites"]
+    out_xref = project_root / settings["paths"]["working"]["silver_xref"]
 
-    npi = pd.read_parquet(bronze_npi)
-    internal = pd.read_parquet(bronze_internal)
+    logger.info(f"Reading NPI data from: {bronze_npi}")
+    try:
+        npi = pd.read_parquet(bronze_npi)
+        logger.info(f"NPI data shape: {npi.shape}")
+    except Exception as e:
+        logger.error(f"Failed to read NPI data: {e}")
+        raise
+
+    logger.info(f"Reading internal data from: {bronze_internal}")
+    try:
+        internal = pd.read_parquet(bronze_internal)
+        logger.info(f"Internal data shape: {internal.shape}")
+    except Exception as e:
+        logger.error(f"Failed to read internal data: {e}")
+        raise
 
     # Flatten nested address structures for ease of use
     npi = _flatten_address(npi, "practice_address")
     internal = _flatten_address(internal, "encounter_location_address")
 
     # ---- Providers ----
-    npi_p = npi[["npi", "provider_name", "primary_specialty"]].rename(columns={
+    # Get all columns to debug
+    logger.info(f"Available columns in NPI data: {npi.columns.tolist()}")
+    
+    # Try to read with more flexible column selection
+    npi_cols = ["npi", "provider_name", "primary_specialty"]
+    available_cols = [col for col in npi_cols if col in npi.columns]
+    
+    logger.info(f"Looking for columns: {npi_cols}")
+    logger.info(f"Found columns: {available_cols}")
+    
+    if not available_cols:
+        logger.error("No expected columns found in NPI data")
+        logger.error(f"Available columns: {npi.columns.tolist()}")
+        raise ValueError(f"None of the expected columns {npi_cols} found in NPI data")
+    
+    npi_p = npi[available_cols].rename(columns={
         "npi": "provider_npi",
         "provider_name": "provider_name_npi",
         "primary_specialty": "specialty_npi",
@@ -82,9 +113,21 @@ def main() -> None:
     )
     providers["primary_specialty"] = providers["specialty_npi"]
 
-    Path(out_prov).parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Writing silver providers: {out_prov}")
-    providers.to_parquet(out_prov, index=False)
+    try:
+        output_dir = Path(out_prov).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # Set Windows-compatible permissions
+        import stat
+        output_dir.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        logger.info(f"Writing silver providers: {out_prov}")
+        providers.to_parquet(out_prov, engine='pyarrow', compression=None, index=False)
+    except PermissionError as e:
+        logger.error(f"Permission denied when writing to {out_prov}")
+        logger.error("Try running the script with administrator privileges")
+        raise
+    except Exception as e:
+        logger.error(f"Failed to write providers file: {e}")
+        raise
 
     # ---- Sites ----
     npi_s = normalize_address(
@@ -178,9 +221,21 @@ def main() -> None:
         )
     )
 
-    Path(out_site).parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Writing silver sites: {out_site}")
-    sites.to_parquet(out_site, index=False)
+    try:
+        output_dir = Path(out_site).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # Set Windows-compatible permissions
+        import stat
+        output_dir.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        logger.info(f"Writing silver sites: {out_site}")
+        sites.to_parquet(out_site, engine='pyarrow', compression=None, index=False)
+    except PermissionError as e:
+        logger.error(f"Permission denied when writing to {out_site}")
+        logger.error("Try running the script with administrator privileges")
+        raise
+    except Exception as e:
+        logger.error(f"Failed to write sites file: {e}")
+        raise
 
     # ---- Xref ----
     internal_norm = normalize_address(
@@ -211,9 +266,21 @@ def main() -> None:
     xref["relationship_type"] = "provider_at"
     xref["last_seen_source"] = "InternalPatientSystem"
 
-    Path(out_xref).parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Writing silver provider-site link: {out_xref}")
-    xref.to_parquet(out_xref, index=False)
+    try:
+        output_dir = Path(out_xref).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # Set Windows-compatible permissions
+        import stat
+        output_dir.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        logger.info(f"Writing silver provider-site link: {out_xref}")
+        xref.to_parquet(out_xref, engine='pyarrow', compression=None, index=False)
+    except PermissionError as e:
+        logger.error(f"Permission denied when writing to {out_xref}")
+        logger.error("Try running the script with administrator privileges")
+        raise
+    except Exception as e:
+        logger.error(f"Failed to write xref file: {e}")
+        raise
 
 
 if __name__ == "__main__":

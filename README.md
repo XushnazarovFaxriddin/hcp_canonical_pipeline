@@ -6,7 +6,7 @@ This repository contains a minimal-but-professional prototype for building a **c
 
 It demonstrates ingestion, normalization/deduplication, entity linking, and a **gold-layer canonical model** suitable for downstream analytics, plus **basic lineage** and **source metadata**.
 
-> Built with **PySpark**, structured as a modular Python package, with optional **Dagster** orchestration and **pytest** tests.
+> Built with **Pandas**, structured as a modular Python package, with optional **Dagster** orchestration and **pytest** tests.
 
 ---
 
@@ -103,7 +103,6 @@ A combined **flattened view** (`gold_hcp_view`) with a single row per provider-s
 Run locally:
 ```bash
 pip install -r requirements.txt
-# (Optional) set SPARK_HOME if needed for local PySpark
 dagster dev -f orchestration/dagster_repo/repo.py
 ```
 
@@ -170,6 +169,8 @@ hcp_canonical_pipeline/
 - Relationship inference is simplistic (presence of an encounter implies affiliation).
 - No SCD Type 2 yet; columns are present to extend later.
 - Minimal Great Expectations-style validation (example hooks included).
+- For large datasets, the pipeline uses chunked reading with Pandas for memory efficiency.
+- Single-machine processing with Pandas (can be extended to Dask or other distributed frameworks if needed).
 
 ---
 
@@ -177,3 +178,22 @@ hcp_canonical_pipeline/
 1) Inspect `sample_data` JSONL files.
 2) Run `make demo` to execute a local run that writes gold outputs to `./_output`.
 3) Open `./_output/gold_hcp_view.parquet` in your BI tool or convert to CSV for quick peek.
+3) Open `./_output/gold_hcp_view.parquet` in your BI tool or convert to CSV for quick peek.
+
+---
+
+## Additional Notes for Dagster
+
+1. To persist information across sessions, set the `DAGSTER_HOME` environment variable to a directory to use for storage. For example:
+   ```bash
+   export DAGSTER_HOME=~/dagster_home
+   ```
+   On Windows, use:
+   ```cmd
+   set DAGSTER_HOME=C:\dagster_home
+   ```
+
+2. On Windows, to enable compute log capture, set the `PYTHONLEGACYWINDOWSSTDIO` environment variable:
+   ```cmd
+   set PYTHONLEGACYWINDOWSSTDIO=1
+   ```
