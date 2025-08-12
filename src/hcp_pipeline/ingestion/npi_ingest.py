@@ -7,7 +7,9 @@ logger = get_logger("npi_ingest")
 
 def main():
     settings = load_project_settings()
-    spark = SparkSession.builder.appName("npi_ingest").getOrCreate()
+    import os
+    os.environ['HADOOP_HOME'] = os.path.abspath('./_work')
+    spark = SparkSession.builder.appName("npi_ingest").config("spark.sql.warehouse.dir", "./_work/spark-warehouse").config("spark.hadoop.fs.permissions.enabled", "false").config("spark.sql.adaptive.enabled", "false").getOrCreate()
 
     input_path = settings["paths"]["input"]["npi_jsonl"]
     bronze_path = settings["paths"]["working"]["bronze_npi"]

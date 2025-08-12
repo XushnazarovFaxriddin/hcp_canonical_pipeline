@@ -19,7 +19,7 @@ def normalize_address(df, prefix, line1, line2, city, state, postal):
 
 def main():
     settings = load_project_settings()
-    spark = SparkSession.builder.appName("normalize").getOrCreate()
+    spark = SparkSession.builder.appName("normalize").config("spark.sql.warehouse.dir", "./_work/spark-warehouse").config("spark.hadoop.fs.permissions.enabled", "false").getOrCreate()
 
     bronze_npi = settings["paths"]["working"]["bronze_npi"]
     bronze_internal = settings["paths"]["working"]["bronze_internal"]

@@ -7,7 +7,7 @@ logger = get_logger("internal_ingest")
 
 def main():
     settings = load_project_settings()
-    spark = SparkSession.builder.appName("internal_ingest").config("spark.sql.warehouse.dir", "./_work/spark-warehouse").config("spark.driver.extraJavaOptions", "-Dhadoop.home.dir=./_work/hadoop").getOrCreate()
+    spark = SparkSession.builder.appName("internal_ingest").config("spark.sql.warehouse.dir", "./_work/spark-warehouse").config("spark.hadoop.fs.permissions.enabled", "false").getOrCreate()
 
     input_path = settings["paths"]["input"]["internal_jsonl"]
     bronze_path = settings["paths"]["working"]["bronze_internal"]

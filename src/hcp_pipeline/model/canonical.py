@@ -6,7 +6,7 @@ logger = get_logger("canonical")
 
 def main():
     settings = load_project_settings()
-    spark = SparkSession.builder.appName("canonical").getOrCreate()
+    spark = SparkSession.builder.appName("canonical").config("spark.sql.warehouse.dir", "./_work/spark-warehouse").config("spark.hadoop.fs.permissions.enabled", "false").getOrCreate()
 
     prov = spark.read.parquet(settings["paths"]["working"]["silver_providers"])
     site = spark.read.parquet(settings["paths"]["working"]["silver_sites"])
