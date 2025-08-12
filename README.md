@@ -182,3 +182,21 @@ hcp_canonical_pipeline/
 1) Inspect `sample_data` JSONL files.
 2) Run `make demo` to execute a local run that writes gold outputs to `./_output`.
 3) Open `./_output/gold_hcp_view.parquet` in your BI tool or convert to CSV for quick peek.
+
+---
+
+## Additional Notes for Dagster
+
+1. To persist information across sessions, set the `DAGSTER_HOME` environment variable to a directory to use for storage. For example:
+   ```bash
+   export DAGSTER_HOME=~/dagster_home
+   ```
+   On Windows, use:
+   ```cmd
+   set DAGSTER_HOME=C:\dagster_home
+   ```
+
+2. On Windows, to enable compute log capture, set the `PYTHONLEGACYWINDOWSSTDIO` environment variable:
+   ```cmd
+   set PYTHONLEGACYWINDOWSSTDIO=1
+   ```
