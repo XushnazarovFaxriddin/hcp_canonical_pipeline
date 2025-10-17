@@ -1,4 +1,4 @@
-[Pandas version of this repo](https://github.com/XushnazarovFaxriddin/hcp_canonical_pipeline/tree/pandas_version)
+[Pandas version of this branch](https://github.com/XushnazarovFaxriddin/hcp_canonical_pipeline/tree/pandas_version)
 
 # Canonical HCP Data Pipeline (Prototype)
 
