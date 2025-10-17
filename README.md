@@ -1,4 +1,4 @@
-[PySpark version of this repo](https://github.com/XushnazarovFaxriddin/hcp_canonical_pipeline/tree/main)
+[PySpark version of this branch](https://github.com/XushnazarovFaxriddin/hcp_canonical_pipeline/tree/main)
 
 # Canonical HCP Data Pipeline (Prototype)
 
